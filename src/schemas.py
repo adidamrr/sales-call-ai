@@ -70,3 +70,19 @@ class ReportRead(BaseModel):
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class RagSearchRequest(BaseModel):
+    query: str
+    top_k: int = 5
+
+
+class RagSearchResult(BaseModel):
+    text: str
+    score: float
+    source: str
+    doc_type: str
+
+
+class RagSearchResponse(BaseModel):
+    results: list[RagSearchResult]

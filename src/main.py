@@ -1,7 +1,7 @@
 from fastapi import Depends, FastAPI, File, Form, HTTPException, UploadFile, status
 from sqlalchemy.orm import Session
 
-from src import models, services
+from src import models, rag, services
 from src.database import Base, engine, get_db
 from src.schemas import (
     CallRead,
@@ -9,6 +9,8 @@ from src.schemas import (
     CallUploadResponse,
     ManagerCreate,
     ManagerRead,
+    RagSearchRequest,
+    RagSearchResponse,
     TranscriptCreate,
     TranscriptRead,
     TranscriptUploadResponse,
@@ -125,3 +127,12 @@ def get_transcript(call_id: int, db: Session = Depends(get_db)):
         )
 
     return transcript
+
+
+@app.post("/knowledge/search", response_model=RagSearchResponse)
+def search_knowledge(search_request: RagSearchRequest):
+    results = rag.search_knowledge(
+        query=search_request.query,
+        top_k=search_request.top_k,
+    )
+    return RagSearchResponse(results=results)
