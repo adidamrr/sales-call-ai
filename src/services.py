@@ -5,7 +5,7 @@ from fastapi import HTTPException, UploadFile, status
 from sqlalchemy.orm import Session
 
 from src.config import settings
-from src.models import Call, CallStatus, Manager, Transcript
+from src.models import Call, CallStatus, Manager, Report, Transcript
 from src.schemas import ManagerCreate
 
 
@@ -107,3 +107,36 @@ def create_or_update_transcript(db: Session, call_id: int, text: str):
 
 def get_transcript_by_call_id(db: Session, call_id: int):
     return db.query(Transcript).filter(Transcript.call_id == call_id).first()
+
+
+def update_call_status(db: Session, call_id: int, status: str):
+    call = get_call_by_id(db, call_id)
+    if call is None:
+        return None
+
+    call.status = status
+    db.commit()
+    db.refresh(call)
+    return call
+
+
+def create_or_update_report(db: Session, call_id: int, analysis: dict):
+    report_json = analysis.get("report_json")
+    report = db.query(Report).filter(Report.call_id == call_id).first()
+
+    if report is None:
+        report = Report(call_id=call_id)
+        db.add(report)
+
+    report.summary = analysis.get("summary")
+    report.call_result = analysis.get("call_result")
+    report.total_score = analysis.get("total_score")
+    report.report_json = report_json
+
+    db.commit()
+    db.refresh(report)
+    return report
+
+
+def get_report_by_call_id(db: Session, call_id: int):
+    return db.query(Report).filter(Report.call_id == call_id).first()

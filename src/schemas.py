@@ -101,3 +101,28 @@ class LLMChatResponse(BaseModel):
 class LLMPreviewResponse(BaseModel):
     call_id: int
     response: str
+
+
+class ScriptComplianceItem(BaseModel):
+    step: str
+    status: str
+    comment: str
+
+
+class ObjectionItem(BaseModel):
+    type: str
+    client_phrase: str
+    manager_response_quality: str
+    recommendation: str
+
+
+class BasicAnalysisResponse(BaseModel):
+    call_id: int
+    summary: str
+    call_result: str
+    total_score: int
+    strengths: list[str]
+    weaknesses: list[str]
+    recommendations: list[str]
+    script_compliance: list[ScriptComplianceItem]
+    objections: list[ObjectionItem]
