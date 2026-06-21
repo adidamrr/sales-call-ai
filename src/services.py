@@ -5,7 +5,7 @@ from fastapi import HTTPException, UploadFile, status
 from sqlalchemy.orm import Session
 
 from src.config import settings
-from src.models import Call, CallStatus, Manager
+from src.models import Call, CallStatus, Manager, Transcript
 from src.schemas import ManagerCreate
 
 
@@ -71,3 +71,39 @@ def get_call_status(db: Session, call_id: int):
     if call is None:
         return None
     return call.status
+
+
+def save_transcript_text(call_id: int, text: str):
+    transcripts_dir = Path(settings.TRANSCRIPTS_DIR)
+    transcripts_dir.mkdir(parents=True, exist_ok=True)
+
+    file_path = transcripts_dir / f"call_{call_id}_transcript.txt"
+    file_path.write_text(text, encoding="utf-8")
+    return str(file_path)
+
+
+def create_or_update_transcript(db: Session, call_id: int, text: str):
+    call = get_call_by_id(db, call_id)
+    if call is None:
+        return None
+
+    transcript_path = save_transcript_text(call_id, text)
+    transcript = db.query(Transcript).filter(Transcript.call_id == call_id).first()
+
+    if transcript is None:
+        transcript = Transcript(call_id=call_id, text=text)
+        db.add(transcript)
+    else:
+        transcript.text = text
+
+    call.transcript_path = transcript_path
+    call.status = CallStatus.transcribed.value
+
+    db.commit()
+    db.refresh(transcript)
+    db.refresh(call)
+    return transcript, call.status
+
+
+def get_transcript_by_call_id(db: Session, call_id: int):
+    return db.query(Transcript).filter(Transcript.call_id == call_id).first()

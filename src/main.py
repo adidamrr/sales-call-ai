@@ -9,6 +9,9 @@ from src.schemas import (
     CallUploadResponse,
     ManagerCreate,
     ManagerRead,
+    TranscriptCreate,
+    TranscriptRead,
+    TranscriptUploadResponse,
 )
 
 
@@ -82,3 +85,43 @@ def get_call_status(
             detail="Call not found.",
         )
     return CallStatusResponse(call_id=call_id, status=call_status)
+
+
+@app.post("/calls/{call_id}/transcript", response_model=TranscriptUploadResponse)
+def upload_transcript(
+    call_id: int, transcript_data: TranscriptCreate, db: Session = Depends(get_db)
+):
+    result = services.create_or_update_transcript(
+        db, call_id=call_id, text=transcript_data.text
+    )
+    if result is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Call not found.",
+        )
+
+    transcript, call_status = result
+    return TranscriptUploadResponse(
+        call_id=call_id,
+        transcript_id=transcript.id,
+        status=call_status,
+    )
+
+
+@app.get("/calls/{call_id}/transcript", response_model=TranscriptRead)
+def get_transcript(call_id: int, db: Session = Depends(get_db)):
+    call = services.get_call_by_id(db, call_id)
+    if call is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Call not found.",
+        )
+
+    transcript = services.get_transcript_by_call_id(db, call_id)
+    if transcript is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Transcript not found.",
+        )
+
+    return transcript
