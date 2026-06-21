@@ -50,6 +50,13 @@ class TranscriptUploadResponse(BaseModel):
     status: str
 
 
+class TranscribeCallResponse(BaseModel):
+    call_id: int
+    transcript_id: int
+    status: str
+    text: str
+
+
 class TranscriptRead(BaseModel):
     id: int
     call_id: int

@@ -19,6 +19,7 @@ from src.schemas import (
     TranscriptCreate,
     TranscriptRead,
     TranscriptUploadResponse,
+    TranscribeCallResponse,
 )
 
 
@@ -132,6 +133,24 @@ def get_transcript(call_id: int, db: Session = Depends(get_db)):
         )
 
     return transcript
+
+
+@app.post("/calls/{call_id}/transcribe", response_model=TranscribeCallResponse)
+def transcribe_call(call_id: int, db: Session = Depends(get_db)):
+    result = services.create_transcript_from_audio(db, call_id)
+    if result is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Call not found.",
+        )
+
+    transcript, call_status = result
+    return TranscribeCallResponse(
+        call_id=call_id,
+        transcript_id=transcript.id,
+        status=call_status,
+        text=transcript.text,
+    )
 
 
 @app.post("/knowledge/search", response_model=RagSearchResponse)

@@ -10,3 +10,4 @@ qdrant-client
 sentence-transformers
 openai
 langgraph
+faster-whisper

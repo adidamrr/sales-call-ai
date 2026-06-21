@@ -1,4 +1,5 @@
 from pathlib import Path
+import json
 from uuid import uuid4
 
 from fastapi import HTTPException, UploadFile, status
@@ -7,6 +8,7 @@ from sqlalchemy.orm import Session
 from src.config import settings
 from src.models import Call, CallStatus, Manager, Report, Transcript
 from src.schemas import ManagerCreate
+from src.stt import transcribe_audio
 
 
 ALLOWED_AUDIO_EXTENSIONS = {".mp3", ".wav", ".m4a"}
@@ -107,6 +109,50 @@ def create_or_update_transcript(db: Session, call_id: int, text: str):
 
 def get_transcript_by_call_id(db: Session, call_id: int):
     return db.query(Transcript).filter(Transcript.call_id == call_id).first()
+
+
+def create_transcript_from_audio(db: Session, call_id: int):
+    call = get_call_by_id(db, call_id)
+    if call is None:
+        return None
+
+    audio_path = Path(call.audio_path)
+    if not audio_path.exists():
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Audio file not found.",
+        )
+
+    call.status = CallStatus.transcribing.value
+    db.commit()
+    db.refresh(call)
+
+    try:
+        transcription = transcribe_audio(str(audio_path))
+        transcript_path = save_transcript_text(call_id, transcription["text"])
+        transcript = db.query(Transcript).filter(Transcript.call_id == call_id).first()
+
+        if transcript is None:
+            transcript = Transcript(call_id=call_id, text=transcription["text"])
+            db.add(transcript)
+        else:
+            transcript.text = transcription["text"]
+
+        transcript.segments_json = json.dumps(
+            transcription["segments"],
+            ensure_ascii=False,
+        )
+        call.transcript_path = transcript_path
+        call.status = CallStatus.transcribed.value
+
+        db.commit()
+        db.refresh(transcript)
+        db.refresh(call)
+        return transcript, call.status
+    except Exception:
+        call.status = CallStatus.failed.value
+        db.commit()
+        raise
 
 
 def update_call_status(db: Session, call_id: int, status: str):

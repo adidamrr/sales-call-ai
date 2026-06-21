@@ -12,6 +12,9 @@ class Settings(BaseSettings):
     LLM_BASE_URL: str = "http://localhost:8000/v1"
     LLM_API_KEY: str = "EMPTY"
     LLM_MODEL: str = "Qwen/Qwen2.5-14B-Instruct-GPTQ-Int4"
+    WHISPER_MODEL: str = "medium"
+    WHISPER_DEVICE: str = "cpu"
+    WHISPER_COMPUTE_TYPE: str = "int8"
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 
