@@ -1,12 +1,12 @@
 import json
 import re
 
+from openai import OpenAI
+
 from src.config import settings
 
 
 def get_llm_client():
-    from openai import OpenAI
-
     return OpenAI(
         base_url=settings.LLM_BASE_URL,
         api_key=settings.LLM_API_KEY,

@@ -1,9 +1,7 @@
 import json
+from typing import TypedDict
 
-try:
-    from typing_extensions import TypedDict
-except ImportError:
-    from typing import TypedDict
+from langgraph.graph import END, START, StateGraph
 
 from src import llm_client, rag
 
@@ -203,8 +201,6 @@ def report_generator_node(state: CallAnalysisState):
 
 
 def build_call_analysis_graph():
-    from langgraph.graph import END, START, StateGraph
-
     graph = StateGraph(CallAnalysisState)
     graph.add_node("retrieve_context_node", retrieve_context_node)
     graph.add_node("summary_agent_node", summary_agent_node)

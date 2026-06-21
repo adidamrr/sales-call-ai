@@ -3,6 +3,10 @@ from pathlib import Path
 import sys
 from uuid import uuid5, NAMESPACE_URL
 
+from qdrant_client import QdrantClient
+from qdrant_client.models import Distance, PointStruct, VectorParams
+from sentence_transformers import SentenceTransformer
+
 from src.config import settings
 
 
@@ -50,14 +54,10 @@ def split_text_into_chunks(text: str, chunk_size: int = CHUNK_SIZE, overlap: int
 
 @lru_cache(maxsize=1)
 def get_embedding_model():
-    from sentence_transformers import SentenceTransformer
-
     return SentenceTransformer(settings.EMBEDDING_MODEL)
 
 
 def get_qdrant_client():
-    from qdrant_client import QdrantClient
-
     return QdrantClient(url=settings.QDRANT_URL)
 
 
@@ -71,8 +71,6 @@ def get_embedding_dimension(model):
 
 
 def create_qdrant_collection():
-    from qdrant_client.models import Distance, VectorParams
-
     model = get_embedding_model()
     vector_size = get_embedding_dimension(model)
     client = get_qdrant_client()
@@ -87,8 +85,6 @@ def create_qdrant_collection():
 
 
 def index_knowledge_base():
-    from qdrant_client.models import PointStruct
-
     documents = load_knowledge_documents()
     model = get_embedding_model()
     client = get_qdrant_client()
