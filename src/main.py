@@ -1,4 +1,5 @@
 from fastapi import Depends, FastAPI, File, Form, HTTPException, UploadFile, status
+import json
 from sqlalchemy.orm import Session
 
 from src import llm_client, models, rag, services
@@ -7,6 +8,7 @@ from src.schemas import (
     CallRead,
     CallStatusResponse,
     CallUploadResponse,
+    BasicAnalysisResponse,
     LLMChatRequest,
     LLMChatResponse,
     LLMPreviewResponse,
@@ -181,3 +183,63 @@ def llm_preview(call_id: int, db: Session = Depends(get_db)):
         context_chunks=context_chunks,
     )
     return LLMPreviewResponse(call_id=call_id, response=response)
+
+
+@app.post("/calls/{call_id}/analyze-basic", response_model=BasicAnalysisResponse)
+def analyze_basic(call_id: int, db: Session = Depends(get_db)):
+    call = services.get_call_by_id(db, call_id)
+    if call is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Call not found.",
+        )
+
+    transcript = services.get_transcript_by_call_id(db, call_id)
+    if transcript is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Transcript not found.",
+        )
+
+    services.update_call_status(db, call_id, models.CallStatus.analyzing.value)
+
+    context_chunks = rag.search_knowledge(
+        query=transcript.text,
+        top_k=5,
+    )
+    analysis = llm_client.analyze_sales_call_basic(
+        transcript=transcript.text,
+        context_chunks=context_chunks,
+    )
+    response = BasicAnalysisResponse(call_id=call_id, **analysis)
+
+    report_data = response.model_dump()
+    services.create_or_update_report(
+        db,
+        call_id=call_id,
+        analysis={
+            **report_data,
+            "report_json": json.dumps(report_data, ensure_ascii=False),
+        },
+    )
+    services.update_call_status(db, call_id, models.CallStatus.completed.value)
+    return response
+
+
+@app.get("/calls/{call_id}/report", response_model=BasicAnalysisResponse)
+def get_report(call_id: int, db: Session = Depends(get_db)):
+    call = services.get_call_by_id(db, call_id)
+    if call is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Call not found.",
+        )
+
+    report = services.get_report_by_call_id(db, call_id)
+    if report is None or report.report_json is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Report not found.",
+        )
+
+    return BasicAnalysisResponse(**json.loads(report.report_json))
