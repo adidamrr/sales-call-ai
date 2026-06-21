@@ -9,3 +9,5 @@ python-dotenv
 qdrant-client
 sentence-transformers
 openai
+langgraph
+typing-extensions

@@ -2,7 +2,7 @@ from fastapi import Depends, FastAPI, File, Form, HTTPException, UploadFile, sta
 import json
 from sqlalchemy.orm import Session
 
-from src import llm_client, models, rag, services
+from src import agents, llm_client, models, rag, services
 from src.database import Base, engine, get_db
 from src.schemas import (
     CallRead,
@@ -226,7 +226,7 @@ def analyze_basic(call_id: int, db: Session = Depends(get_db)):
     return response
 
 
-@app.get("/calls/{call_id}/report", response_model=BasicAnalysisResponse)
+@app.get("/calls/{call_id}/report")
 def get_report(call_id: int, db: Session = Depends(get_db)):
     call = services.get_call_by_id(db, call_id)
     if call is None:
@@ -242,4 +242,40 @@ def get_report(call_id: int, db: Session = Depends(get_db)):
             detail="Report not found.",
         )
 
-    return BasicAnalysisResponse(**json.loads(report.report_json))
+    return json.loads(report.report_json)
+
+
+@app.post("/calls/{call_id}/analyze-agents")
+def analyze_agents(call_id: int, db: Session = Depends(get_db)):
+    call = services.get_call_by_id(db, call_id)
+    if call is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Call not found.",
+        )
+
+    transcript = services.get_transcript_by_call_id(db, call_id)
+    if transcript is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Transcript not found.",
+        )
+
+    services.update_call_status(db, call_id, models.CallStatus.analyzing.value)
+
+    final_report = agents.analyze_call_with_agents(
+        call_id=call_id,
+        transcript=transcript.text,
+    )
+    services.create_or_update_report(
+        db,
+        call_id=call_id,
+        analysis={
+            "summary": final_report.get("summary"),
+            "call_result": final_report.get("call_result"),
+            "total_score": final_report.get("total_score"),
+            "report_json": json.dumps(final_report, ensure_ascii=False),
+        },
+    )
+    services.update_call_status(db, call_id, models.CallStatus.completed.value)
+    return final_report
