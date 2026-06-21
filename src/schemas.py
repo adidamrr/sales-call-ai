@@ -86,3 +86,18 @@ class RagSearchResult(BaseModel):
 
 class RagSearchResponse(BaseModel):
     results: list[RagSearchResult]
+
+
+class LLMChatRequest(BaseModel):
+    message: str
+    temperature: float = 0.2
+    max_tokens: int = 500
+
+
+class LLMChatResponse(BaseModel):
+    response: str
+
+
+class LLMPreviewResponse(BaseModel):
+    call_id: int
+    response: str

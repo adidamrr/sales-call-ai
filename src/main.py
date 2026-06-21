@@ -1,12 +1,15 @@
 from fastapi import Depends, FastAPI, File, Form, HTTPException, UploadFile, status
 from sqlalchemy.orm import Session
 
-from src import models, rag, services
+from src import llm_client, models, rag, services
 from src.database import Base, engine, get_db
 from src.schemas import (
     CallRead,
     CallStatusResponse,
     CallUploadResponse,
+    LLMChatRequest,
+    LLMChatResponse,
+    LLMPreviewResponse,
     ManagerCreate,
     ManagerRead,
     RagSearchRequest,
@@ -136,3 +139,45 @@ def search_knowledge(search_request: RagSearchRequest):
         top_k=search_request.top_k,
     )
     return RagSearchResponse(results=results)
+
+
+@app.post("/llm/chat", response_model=LLMChatResponse)
+def llm_chat(chat_request: LLMChatRequest):
+    response = llm_client.chat_completion(
+        messages=[{"role": "user", "content": chat_request.message}],
+        temperature=chat_request.temperature,
+        max_tokens=chat_request.max_tokens,
+    )
+    return LLMChatResponse(response=response)
+
+
+@app.post("/calls/{call_id}/llm-preview", response_model=LLMPreviewResponse)
+def llm_preview(call_id: int, db: Session = Depends(get_db)):
+    call = services.get_call_by_id(db, call_id)
+    if call is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Call not found.",
+        )
+
+    transcript = services.get_transcript_by_call_id(db, call_id)
+    if transcript is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Transcript not found.",
+        )
+
+    task = (
+        "Кратко проанализируй звонок отдела продаж. "
+        "Найди основные проблемы и дай 3 рекомендации менеджеру."
+    )
+    context_chunks = rag.search_knowledge(
+        query=f"{task}\n\n{transcript.text}",
+        top_k=5,
+    )
+    response = llm_client.analyze_text_with_context(
+        task=task,
+        transcript=transcript.text,
+        context_chunks=context_chunks,
+    )
+    return LLMPreviewResponse(call_id=call_id, response=response)
