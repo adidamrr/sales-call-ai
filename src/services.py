@@ -64,8 +64,11 @@ def create_call(db: Session, manager_id: int, audio_path: str):
     return db_call
 
 
-def get_calls(db: Session):
-    return db.query(Call).order_by(Call.id).all()
+def get_calls(db: Session, status: str | None = None):
+    query = db.query(Call)
+    if status is not None:
+        query = query.filter(Call.status == status)
+    return query.order_by(Call.id).all()
 
 
 def get_call_by_id(db: Session, call_id: int):

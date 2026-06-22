@@ -1,4 +1,14 @@
-from fastapi import BackgroundTasks, Depends, FastAPI, File, Form, HTTPException, UploadFile, status
+from fastapi import (
+    BackgroundTasks,
+    Depends,
+    FastAPI,
+    File,
+    Form,
+    HTTPException,
+    Query,
+    UploadFile,
+    status,
+)
 import json
 from sqlalchemy.orm import Session
 
@@ -65,8 +75,11 @@ def upload_call(
 
 
 @app.get("/calls", response_model=list[CallRead])
-def get_calls(db: Session = Depends(get_db)):
-    return services.get_calls(db)
+def get_calls(
+    call_status: str | None = Query(default=None, alias="status"),
+    db: Session = Depends(get_db),
+):
+    return services.get_calls(db, status=call_status)
 
 
 @app.get("/calls/{call_id}", response_model=CallRead)
