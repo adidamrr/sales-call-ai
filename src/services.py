@@ -1,17 +1,21 @@
 from pathlib import Path
 import json
+import logging
 from uuid import uuid4
 
 from fastapi import HTTPException, UploadFile, status
 from sqlalchemy.orm import Session
 
+from src import agents, llm_client, rag
 from src.config import settings
+from src.database import SessionLocal
 from src.models import Call, CallStatus, Manager, Report, Transcript
-from src.schemas import ManagerCreate
+from src.schemas import BasicAnalysisResponse, ManagerCreate
 from src.stt import transcribe_audio
 
 
 ALLOWED_AUDIO_EXTENSIONS = {".mp3", ".wav", ".m4a"}
+logger = logging.getLogger(__name__)
 
 
 def create_manager(db: Session, manager: ManagerCreate):
@@ -82,29 +86,6 @@ def save_transcript_text(call_id: int, text: str):
     file_path = transcripts_dir / f"call_{call_id}_transcript.txt"
     file_path.write_text(text, encoding="utf-8")
     return str(file_path)
-
-
-def create_or_update_transcript(db: Session, call_id: int, text: str):
-    call = get_call_by_id(db, call_id)
-    if call is None:
-        return None
-
-    transcript_path = save_transcript_text(call_id, text)
-    transcript = db.query(Transcript).filter(Transcript.call_id == call_id).first()
-
-    if transcript is None:
-        transcript = Transcript(call_id=call_id, text=text)
-        db.add(transcript)
-    else:
-        transcript.text = text
-
-    call.transcript_path = transcript_path
-    call.status = CallStatus.transcribed.value
-
-    db.commit()
-    db.refresh(transcript)
-    db.refresh(call)
-    return transcript, call.status
 
 
 def get_transcript_by_call_id(db: Session, call_id: int):
@@ -186,3 +167,100 @@ def create_or_update_report(db: Session, call_id: int, analysis: dict):
 
 def get_report_by_call_id(db: Session, call_id: int):
     return db.query(Report).filter(Report.call_id == call_id).first()
+
+
+def save_analysis_error(db: Session, call_id: int, error: Exception):
+    error_report = {
+        "call_id": call_id,
+        "status": CallStatus.failed.value,
+        "error": str(error),
+    }
+    create_or_update_report(
+        db,
+        call_id=call_id,
+        analysis={
+            "summary": "Analysis failed.",
+            "call_result": CallStatus.failed.value,
+            "total_score": 0,
+            "report_json": json.dumps(error_report, ensure_ascii=False),
+        },
+    )
+
+
+def run_transcription_task(call_id: int):
+    db = SessionLocal()
+    try:
+        create_transcript_from_audio(db, call_id)
+    except Exception:
+        logger.exception("Transcription task failed for call_id=%s", call_id)
+        db.rollback()
+        update_call_status(db, call_id, CallStatus.failed.value)
+    finally:
+        db.close()
+
+
+def run_basic_analysis_task(call_id: int):
+    db = SessionLocal()
+    try:
+        transcript = get_transcript_by_call_id(db, call_id)
+        if transcript is None:
+            raise ValueError("Transcript not found.")
+
+        context_chunks = rag.search_knowledge(
+            query=transcript.text,
+            top_k=5,
+        )
+        analysis = llm_client.analyze_sales_call_basic(
+            transcript=transcript.text,
+            context_chunks=context_chunks,
+        )
+        response = BasicAnalysisResponse(call_id=call_id, **analysis)
+        report_data = response.model_dump()
+
+        create_or_update_report(
+            db,
+            call_id=call_id,
+            analysis={
+                **report_data,
+                "report_json": json.dumps(report_data, ensure_ascii=False),
+            },
+        )
+        update_call_status(db, call_id, CallStatus.completed.value)
+    except Exception as error:
+        logger.exception("Basic analysis task failed for call_id=%s", call_id)
+        db.rollback()
+        update_call_status(db, call_id, CallStatus.failed.value)
+        save_analysis_error(db, call_id, error)
+    finally:
+        db.close()
+
+
+def run_agent_analysis_task(call_id: int):
+    db = SessionLocal()
+    try:
+        transcript = get_transcript_by_call_id(db, call_id)
+        if transcript is None:
+            raise ValueError("Transcript not found.")
+
+        final_report = agents.analyze_call_with_agents(
+            call_id=call_id,
+            transcript=transcript.text,
+        )
+        create_or_update_report(
+            db,
+            call_id=call_id,
+            analysis={
+                "summary": final_report.get("summary"),
+                "call_result": final_report.get("call_result"),
+                "total_score": final_report.get("total_score"),
+                "report_json": json.dumps(final_report, ensure_ascii=False),
+            },
+        )
+        update_call_status(db, call_id, CallStatus.completed.value)
+    except Exception as error:
+        logger.exception("Agent analysis task failed for call_id=%s", call_id)
+        db.rollback()
+        update_call_status(db, call_id, CallStatus.failed.value)
+        save_analysis_error(db, call_id, error)
+    finally:
+        db.close()
